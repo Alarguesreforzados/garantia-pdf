@@ -182,27 +182,8 @@ async function subirADrive(pdfBuffer, nombre_cliente, numero_trabajo, fechaHoy) 
 
   const drive = google.drive({ version: 'v3', auth });
 
-  // Buscar o crear la carpeta destino
-  const folderName = 'trabajos realizados de instalacion matriculado';
-  const folderSearch = await drive.files.list({
-    q: `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-    fields: 'files(id)',
-  });
-
-  let folderId;
-  if (folderSearch.data.files.length > 0) {
-    folderId = folderSearch.data.files[0].id;
-  } else {
-    // Crear la carpeta si no existe
-    const folder = await drive.files.create({
-      requestBody: {
-        name: folderName,
-        mimeType: 'application/vnd.google-apps.folder',
-      },
-      fields: 'id',
-    });
-    folderId = folder.data.id;
-  }
+  // Carpeta destino: "Garantias" (Instalacion AA Matriculado)
+  const folderId = process.env.DRIVE_FOLDER_ID || '1MhZYKeYaBnTB4GLEGiwl7ax5eUSN-kKC';
 
   // Subir el PDF
   const { Readable } = require('stream');
