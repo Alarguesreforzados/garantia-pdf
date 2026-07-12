@@ -82,8 +82,9 @@ const { error: upErr } = await sb.storage
 
 let pdfUrl = '';
 if (!upErr) {
-const { data: urlData } = sb.storage.from('garantias').getPublicUrl(fileName);
-pdfUrl = urlData?.publicUrl || '';
+// bucket privado: URL firmada de 7 días (el cliente igual recibe el PDF adjunto en el email)
+const { data: urlData } = await sb.storage.from('garantias').createSignedUrl(fileName, 604800);
+pdfUrl = urlData?.signedUrl || '';
 }
 
 const emailOk = await enviarEmailGarantia({ nombre_cliente, email_cliente, pdfBuffer, pdfUrl, numero_trabajo, monto_total });
@@ -147,8 +148,9 @@ const { error: upErr } = await sb.storage
 .upload(fileName, pdfBuffer, { contentType: 'application/pdf', upsert: true });
 
 if (!upErr) {
-const { data: urlData } = sb.storage.from('comprobantes').getPublicUrl(fileName);
-pdfUrl = urlData?.publicUrl || '';
+// bucket privado: URL firmada de 7 días para el archivo interno
+const { data: urlData } = await sb.storage.from('comprobantes').createSignedUrl(fileName, 604800);
+pdfUrl = urlData?.signedUrl || '';
 } else {
 console.warn('Error subiendo a Supabase Storage:', upErr.message);
 }
