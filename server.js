@@ -87,11 +87,22 @@ const { data: urlData } = await sb.storage.from('garantias').createSignedUrl(fil
 pdfUrl = urlData?.signedUrl || '';
 }
 
+// Subir también a Google Drive (carpeta de documentos generados)
+let driveUrl = '';
+if (GOOGLE_SA_JSON) {
+try {
+driveUrl = await subirADrive(pdfBuffer, nombre_cliente, numero_trabajo || ('GAR-' + Date.now()), new Date().toISOString().split('T')[0]);
+} catch (driveErr) {
+console.warn('Google Drive (garantia) no disponible:', driveErr.message);
+}
+}
+
 const emailOk = await enviarEmailGarantia({ nombre_cliente, email_cliente, pdfBuffer, pdfUrl, numero_trabajo, monto_total });
 
 res.json({
 ok: true,
 pdf_url: pdfUrl,
+drive_url: driveUrl,
 email_enviado: emailOk,
 mensaje: `Garantía generada y enviada a ${email_cliente}`,
 });
@@ -215,7 +226,7 @@ scopes: ['https://www.googleapis.com/auth/drive'],
 const drive = google.drive({ version: 'v3', auth });
 
 // Carpeta destino: "Garantias" (Instalacion AA Matriculado)
-const folderId = process.env.DRIVE_FOLDER_ID || '1MhZYKeYaBnTB4GLEGiwl7ax5eUSN-kKC';
+const folderId = process.env.DRIVE_FOLDER_ID || '1pTMvXgqU4KM883vxMwNUErmPFSUoh0rT';
 
 // Subir el PDF
 const { Readable } = require('stream');
