@@ -14,7 +14,10 @@ const RESEND_APIKEY = process.env.RESEND_APIKEY;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const GARANTIA_MESES = parseInt(process.env.GARANTIA_MESES || '6');
-const GOOGLE_SA_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON; // opcional
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const GOOGLE_REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
+const DRIVE_OK = !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REFRESH_TOKEN);
 const NOTIFICACIONES_EMAIL = process.env.NOTIFICACIONES_EMAIL || 'alarguesreforzados.dep.legal@gmail.com';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -89,8 +92,8 @@ pdfUrl = urlData?.signedUrl || '';
 
 // Subir también a Google Drive (carpeta de documentos generados)
 let driveUrl = '';
-let driveError = GOOGLE_SA_JSON ? null : 'GOOGLE_SERVICE_ACCOUNT_JSON no configurada';
-if (GOOGLE_SA_JSON) {
+let driveError = DRIVE_OK ? null : 'credenciales OAuth de Google Drive no configuradas';
+if (DRIVE_OK) {
 try {
 driveUrl = await subirADrive(pdfBuffer, nombre_cliente, numero_trabajo || ('GAR-' + Date.now()), new Date().toISOString().split('T')[0]);
 } catch (driveErr) {
@@ -171,7 +174,7 @@ console.warn('Error subiendo a Supabase Storage:', upErr.message);
 
 // 3. Subir a Google Drive (si hay credenciales configuradas)
 let driveUrl = '';
-if (GOOGLE_SA_JSON) {
+if (DRIVE_OK) {
 try {
 driveUrl = await subirADrive(pdfBuffer, nombre_cliente, numero_trabajo, fechaHoy);
 } catch (driveErr) {
@@ -216,15 +219,13 @@ res.status(500).json({ error: err.message });
 }
 });
 
-// ── Subir PDF a Google Drive ──────────────────────────────────────────────────
+// ── Subir PDF a Google Drive (OAuth delegado a cuenta personal — las cuentas de
+// servicio no tienen cuota propia en Drive personal, por eso se usa OAuth) ────
 async function subirADrive(pdfBuffer, nombre_cliente, numero_trabajo, fechaHoy) {
 const { google } = require('googleapis');
 
-const saKey = JSON.parse(GOOGLE_SA_JSON);
-const auth = new google.auth.GoogleAuth({
-credentials: saKey,
-scopes: ['https://www.googleapis.com/auth/drive'],
-});
+const auth = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+auth.setCredentials({ refresh_token: GOOGLE_REFRESH_TOKEN });
 
 const drive = google.drive({ version: 'v3', auth });
 
