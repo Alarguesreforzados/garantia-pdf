@@ -98,7 +98,7 @@ try {
 driveUrl = await subirADrive(pdfBuffer, nombre_cliente, numero_trabajo || ('GAR-' + Date.now()), new Date().toISOString().split('T')[0]);
 } catch (driveErr) {
 console.warn('Google Drive (garantia) no disponible:', driveErr.message);
-driveError = driveErr.message; // TEMPORAL: para diagnosticar, sacar despues
+driveError = driveErr.message;
 }
 }
 
