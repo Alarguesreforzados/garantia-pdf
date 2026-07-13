@@ -89,11 +89,13 @@ pdfUrl = urlData?.signedUrl || '';
 
 // Subir también a Google Drive (carpeta de documentos generados)
 let driveUrl = '';
+let driveError = GOOGLE_SA_JSON ? null : 'GOOGLE_SERVICE_ACCOUNT_JSON no configurada';
 if (GOOGLE_SA_JSON) {
 try {
 driveUrl = await subirADrive(pdfBuffer, nombre_cliente, numero_trabajo || ('GAR-' + Date.now()), new Date().toISOString().split('T')[0]);
 } catch (driveErr) {
 console.warn('Google Drive (garantia) no disponible:', driveErr.message);
+driveError = driveErr.message; // TEMPORAL: para diagnosticar, sacar despues
 }
 }
 
@@ -103,6 +105,7 @@ res.json({
 ok: true,
 pdf_url: pdfUrl,
 drive_url: driveUrl,
+drive_error: driveError, // TEMPORAL: para diagnosticar, sacar despues
 email_enviado: emailOk,
 mensaje: `Garantía generada y enviada a ${email_cliente}`,
 });
