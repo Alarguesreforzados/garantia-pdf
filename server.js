@@ -512,7 +512,7 @@ const bodyHtml = `
 </div>`;
 
 const payload = {
-from: 'Instalaciones A/C <onboarding@resend.dev>',
+from: 'Instalaciones A/C <admin@instalacionmatriculado.com.ar>',
 to: [email_cliente],
 reply_to: NOTIFICACIONES_EMAIL,
 subject: `Tu garantia - Instalaciones A/C${nro ? ' - ' + nro : ''}`,
