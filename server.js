@@ -53,8 +53,9 @@ app.post('/whatsapp-webhook', async (req, res) => {
 });
 
 // ── POST /generar-garantia ────────────────────────────────────────────────────
-// tipo_garantia: 'instalacion' (default) | 'arreglo' — cambia el texto legal y el
-// plazo por defecto del certificado. garantia_meses (opcional) pisa el plazo default.
+// tipo_garantia: 'instalacion' (default) | 'arreglo' | 'mantenimiento' — cambia solo
+// el texto legal del certificado. garantia_meses define siempre el plazo (varia por
+// trabajo, no depende del tipo). observaciones (opcional) se imprime en el PDF.
 app.post('/generar-garantia', async (req, res) => {
 try {
 const {
@@ -69,6 +70,7 @@ monto_total = 0,
 numero_trabajo = '',
 tipo_garantia = 'instalacion',
 garantia_meses,
+observaciones = '',
 } = req.body;
 
 if (!email_cliente) {
@@ -78,7 +80,7 @@ return res.status(400).json({ error: 'email_cliente es requerido' });
 const pdfBuffer = await generarPDF({
 nombre_cliente, email_cliente, telefono,
 direccion, equipo, trabajo, tecnico,
-monto_total, numero_trabajo, tipo_garantia, garantia_meses,
+monto_total, numero_trabajo, tipo_garantia, garantia_meses, observaciones,
 });
 
 const fileName = `garantias/${tipo_garantia}_${numero_trabajo || Date.now()}_${nombre_cliente.replace(/\s+/g,'-')}.pdf`;
@@ -263,16 +265,22 @@ return new Promise((resolve, reject) => {
 const {
 nombre_cliente, direccion, equipo, trabajo,
 tecnico, monto_total, numero_trabajo,
-tipo_garantia = 'instalacion', garantia_meses,
+tipo_garantia = 'instalacion', garantia_meses, observaciones = '',
 } = datos;
 
 const esArreglo = tipo_garantia === 'arreglo';
-const mesesDefault = esArreglo ? 3 : 12;
-const meses = parseInt(garantia_meses, 10) || mesesDefault;
-const tituloTipo = esArreglo ? 'REPARACIÓN' : 'INSTALACIÓN';
+const esMantenimiento = tipo_garantia === 'mantenimiento';
+// El plazo lo define siempre el campo "Duracion" (varia por trabajo); 12 es solo
+// un piso de seguridad si por algun motivo no llega ningun valor.
+const meses = parseInt(garantia_meses, 10) || 12;
+const tituloTipo = esArreglo ? 'REPARACIÓN' : esMantenimiento ? 'MANTENIMIENTO' : 'INSTALACIÓN';
 const alcanceItems = esArreglo
 ? ['Mano de obra y repuesto de la reparacion puntual realizada.',
    'Revisita sin costo si la misma falla reparada vuelve a presentarse.',
+   'Garantia valida presentando este documento.']
+: esMantenimiento
+? ['Mano de obra del service de mantenimiento realizado.',
+   'Revisita sin costo si surge una falla originada en las tareas realizadas.',
    'Garantia valida presentando este documento.']
 : ['Mano de obra del trabajo realizado por defectos de instalacion o service.',
    'Revisita sin costo ante fallas originadas en el trabajo ejecutado.',
@@ -280,6 +288,10 @@ const alcanceItems = esArreglo
 const noCubreItems = esArreglo
 ? ['Fallas del equipo no relacionadas con la reparacion realizada.',
    'Danos por mal uso, sobrecargas electricas o agentes externos posteriores al arreglo.',
+   'Trabajos realizados por terceros sobre la misma instalacion.']
+: esMantenimiento
+? ['Fallas del equipo no relacionadas con el mantenimiento realizado.',
+   'Danos por mal uso, sobrecargas electricas o agentes externos posteriores al service.',
    'Trabajos realizados por terceros sobre la misma instalacion.']
 : ['Danos por mal uso, sobrecargas electricas o agentes externos.',
    'Fallas en el equipo no relacionadas con el trabajo realizado.',
@@ -374,6 +386,13 @@ doc.font('Helvetica').fontSize(9).fillColor(NEGRO);
 noCubreItems.forEach(item => {
 doc.text('- ' + item, { indent: 10, lineGap: 3 });
 });
+
+if (observaciones && observaciones.trim()) {
+doc.moveDown(0.6);
+doc.font('Helvetica-Bold').fontSize(11).fillColor(AZUL).text('Observaciones');
+doc.moveDown(0.3);
+doc.font('Helvetica').fontSize(9).fillColor(NEGRO).text(observaciones.trim(), { lineGap: 3 });
+}
 
 doc.moveDown(2);
 const firmaY = doc.y;
