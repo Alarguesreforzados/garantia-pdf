@@ -105,14 +105,15 @@ driveError = driveErr.message;
 }
 }
 
-const emailOk = await enviarEmailGarantia({ nombre_cliente, email_cliente, pdfBuffer, pdfUrl, numero_trabajo, monto_total });
+const emailResult = await enviarEmailGarantia({ nombre_cliente, email_cliente, pdfBuffer, pdfUrl, numero_trabajo, monto_total });
 
 res.json({
 ok: true,
 pdf_url: pdfUrl,
 drive_url: driveUrl,
 drive_error: driveError, // TEMPORAL: para diagnosticar, sacar despues
-email_enviado: emailOk,
+email_enviado: emailResult.ok,
+email_error: emailResult.error, // TEMPORAL: para diagnosticar, sacar despues
 mensaje: `Garantía generada y enviada a ${email_cliente}`,
 });
 
@@ -487,7 +488,7 @@ doc.end();
 
 // ── Enviar email con Resend ──────────────────────────────────────────────────
 async function enviarEmailGarantia({ nombre_cliente, email_cliente, pdfBuffer, pdfUrl, numero_trabajo, monto_total }) {
-if (!RESEND_APIKEY) { console.warn('RESEND_APIKEY no configurado'); return false; }
+if (!RESEND_APIKEY) { console.warn('RESEND_APIKEY no configurado'); return { ok: false, error: 'RESEND_APIKEY no configurado' }; }
 
 const montoFmt = '$' + Number(monto_total).toLocaleString('es-AR');
 const nro = numero_trabajo || '';
@@ -530,9 +531,9 @@ body: JSON.stringify(payload),
 });
 
 const result = await resp.json();
-if (!resp.ok) { console.error('Resend error:', result); return false; }
+if (!resp.ok) { console.error('Resend error:', result); return { ok: false, error: result.message || JSON.stringify(result) }; }
 console.log('Email enviado:', result.id);
-return true;
+return { ok: true, error: null };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
