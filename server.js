@@ -13,7 +13,6 @@ const PORT = process.env.PORT || 3000;
 const RESEND_APIKEY = process.env.RESEND_APIKEY;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const GARANTIA_MESES = parseInt(process.env.GARANTIA_MESES || '6');
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
@@ -54,6 +53,8 @@ app.post('/whatsapp-webhook', async (req, res) => {
 });
 
 // ── POST /generar-garantia ────────────────────────────────────────────────────
+// tipo_garantia: 'instalacion' (default) | 'arreglo' — cambia el texto legal y el
+// plazo por defecto del certificado. garantia_meses (opcional) pisa el plazo default.
 app.post('/generar-garantia', async (req, res) => {
 try {
 const {
@@ -66,6 +67,8 @@ trabajo = 'Instalación',
 tecnico = '',
 monto_total = 0,
 numero_trabajo = '',
+tipo_garantia = 'instalacion',
+garantia_meses,
 } = req.body;
 
 if (!email_cliente) {
@@ -75,10 +78,10 @@ return res.status(400).json({ error: 'email_cliente es requerido' });
 const pdfBuffer = await generarPDF({
 nombre_cliente, email_cliente, telefono,
 direccion, equipo, trabajo, tecnico,
-monto_total, numero_trabajo,
+monto_total, numero_trabajo, tipo_garantia, garantia_meses,
 });
 
-const fileName = `garantias/${numero_trabajo || Date.now()}_${nombre_cliente.replace(/\s+/g,'-')}.pdf`;
+const fileName = `garantias/${tipo_garantia}_${numero_trabajo || Date.now()}_${nombre_cliente.replace(/\s+/g,'-')}.pdf`;
 const { error: upErr } = await sb.storage
 .from('garantias')
 .upload(fileName, pdfBuffer, { contentType: 'application/pdf', upsert: true });
@@ -259,7 +262,27 @@ return new Promise((resolve, reject) => {
 const {
 nombre_cliente, direccion, equipo, trabajo,
 tecnico, monto_total, numero_trabajo,
+tipo_garantia = 'instalacion', garantia_meses,
 } = datos;
+
+const esArreglo = tipo_garantia === 'arreglo';
+const mesesDefault = esArreglo ? 3 : 12;
+const meses = parseInt(garantia_meses, 10) || mesesDefault;
+const tituloTipo = esArreglo ? 'REPARACIÓN' : 'INSTALACIÓN';
+const alcanceItems = esArreglo
+? ['Mano de obra y repuesto de la reparacion puntual realizada.',
+   'Revisita sin costo si la misma falla reparada vuelve a presentarse.',
+   'Garantia valida presentando este documento.']
+: ['Mano de obra del trabajo realizado por defectos de instalacion o service.',
+   'Revisita sin costo ante fallas originadas en el trabajo ejecutado.',
+   'Garantia valida presentando este documento.'];
+const noCubreItems = esArreglo
+? ['Fallas del equipo no relacionadas con la reparacion realizada.',
+   'Danos por mal uso, sobrecargas electricas o agentes externos posteriores al arreglo.',
+   'Trabajos realizados por terceros sobre la misma instalacion.']
+: ['Danos por mal uso, sobrecargas electricas o agentes externos.',
+   'Fallas en el equipo no relacionadas con el trabajo realizado.',
+   'Trabajos realizados por terceros sobre la misma instalacion.'];
 
 const doc = new PDFDocument({ size: 'A4', margin: 60 });
 const chunks = [];
@@ -269,7 +292,7 @@ doc.on('error', reject);
 
 const hoy = new Date();
 const fechaHoy = formatFecha(hoy);
-const fechaVto = formatFecha(new Date(hoy.setMonth(hoy.getMonth() + GARANTIA_MESES)));
+const fechaVto = formatFecha(new Date(hoy.setMonth(hoy.getMonth() + meses)));
 const montoFmt = '$' + Number(monto_total).toLocaleString('es-AR');
 const nroTrab = numero_trabajo || ('GAR-' + Date.now());
 
@@ -292,7 +315,7 @@ doc.fillColor(NEGRO).moveDown(3);
 
 doc.y = 130;
 doc.font('Helvetica-Bold').fontSize(18).fillColor(VERDE)
-.text('CERTIFICADO DE GARANTIA', { align: 'center' });
+.text(`CERTIFICADO DE GARANTIA — ${tituloTipo}`, { align: 'center' });
 doc.moveDown(0.4);
 doc.font('Helvetica').fontSize(11).fillColor(GRIS)
 .text(`Trabajo: ${trabajo} de equipo de aire acondicionado`, { align: 'center' });
@@ -323,7 +346,7 @@ const filasTrabajo = [
 ['Monto abonado', montoFmt],
 ['Inicio garantia', fechaHoy],
 ['Vence', fechaVto],
-['Duracion', `${GARANTIA_MESES} meses`],
+['Duracion', `${meses} meses`],
 ];
 let rowY2 = card2Y + 36;
 filasTrabajo.forEach(([lbl, val]) => {
@@ -339,9 +362,7 @@ doc.moveDown(1.4);
 doc.font('Helvetica-Bold').fontSize(11).fillColor(AZUL).text('Alcance de la garantia');
 doc.moveDown(0.4);
 doc.font('Helvetica').fontSize(9).fillColor(NEGRO);
-['Mano de obra del trabajo realizado por defectos de instalacion o service.',
-'Revisita sin costo ante fallas originadas en el trabajo ejecutado.',
-'Garantia valida presentando este documento.'].forEach(item => {
+alcanceItems.forEach(item => {
 doc.text('- ' + item, { indent: 10, lineGap: 3 });
 });
 
@@ -349,9 +370,7 @@ doc.moveDown(0.6);
 doc.font('Helvetica-Bold').fontSize(11).fillColor('#dc2626').text('No cubre:');
 doc.moveDown(0.3);
 doc.font('Helvetica').fontSize(9).fillColor(NEGRO);
-['Danos por mal uso, sobrecargas electricas o agentes externos.',
-'Fallas en el equipo no relacionadas con el trabajo realizado.',
-'Trabajos realizados por terceros sobre la misma instalacion.'].forEach(item => {
+noCubreItems.forEach(item => {
 doc.text('- ' + item, { indent: 10, lineGap: 3 });
 });
 
