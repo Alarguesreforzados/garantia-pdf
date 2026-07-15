@@ -5,7 +5,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '8mb' })); // las firmas tactiles viajan como PNG base64
 app.use(express.urlencoded({ extended: true })); // necesario para webhooks de Twilio (WhatsApp)
 
 // ── Variables de entorno (configurar en Railway) ──────────────────────────────
@@ -56,6 +56,8 @@ app.post('/whatsapp-webhook', async (req, res) => {
 // tipo_garantia: 'instalacion' (default) | 'arreglo' | 'mantenimiento' — cambia solo
 // el texto legal del certificado. garantia_meses define siempre el plazo (varia por
 // trabajo, no depende del tipo). observaciones (opcional) se imprime en el PDF.
+// firma_tecnico / firma_cliente (opcionales): data URL "data:image/png;base64,..."
+// capturada en un canvas tactil; se estampan sobre las lineas de firma del PDF.
 app.post('/generar-garantia', async (req, res) => {
 try {
 const {
@@ -71,6 +73,8 @@ numero_trabajo = '',
 tipo_garantia = 'instalacion',
 garantia_meses,
 observaciones = '',
+firma_tecnico = '',
+firma_cliente = '',
 } = req.body;
 
 if (!email_cliente) {
@@ -81,6 +85,7 @@ const pdfBuffer = await generarPDF({
 nombre_cliente, email_cliente, telefono,
 direccion, equipo, trabajo, tecnico,
 monto_total, numero_trabajo, tipo_garantia, garantia_meses, observaciones,
+firma_tecnico, firma_cliente,
 });
 
 const fileName = `garantias/${tipo_garantia}_${numero_trabajo || Date.now()}_${nombre_cliente.replace(/\s+/g,'-')}.pdf`;
@@ -266,6 +271,7 @@ const {
 nombre_cliente, direccion, equipo, trabajo,
 tecnico, monto_total, numero_trabajo,
 tipo_garantia = 'instalacion', garantia_meses, observaciones = '',
+firma_tecnico = '', firma_cliente = '',
 } = datos;
 
 const esArreglo = tipo_garantia === 'arreglo';
@@ -394,12 +400,26 @@ doc.moveDown(0.3);
 doc.font('Helvetica').fontSize(9).fillColor(NEGRO).text(observaciones.trim(), { lineGap: 3 });
 }
 
-doc.moveDown(2);
+doc.moveDown(1);
+const firmaBoxW = 170, firmaBoxH = 55, firmaGap = 4;
+const firmaImgY = doc.y;
+doc.y = firmaImgY + firmaBoxH + firmaGap;
 const firmaY = doc.y;
-doc.moveTo(60, firmaY).lineTo(220, firmaY).stroke('#d1d5db');
-doc.font('Helvetica').fontSize(9).fillColor(GRIS).text('Firma y sello del tecnico', 60, firmaY + 4);
-doc.moveTo(doc.page.width - 220, firmaY).lineTo(doc.page.width - 60, firmaY).stroke('#d1d5db');
-doc.text('Instalaciones A/C - Sello', doc.page.width - 220, firmaY + 4);
+const firmaClienteX = doc.page.width - 60 - firmaBoxW;
+
+if (firma_tecnico) {
+try { doc.image(bufferFromDataUrl(firma_tecnico), 60, firmaImgY, { fit: [firmaBoxW, firmaBoxH] }); }
+catch (e) { console.warn('firma_tecnico invalida:', e.message); }
+}
+if (firma_cliente) {
+try { doc.image(bufferFromDataUrl(firma_cliente), firmaClienteX, firmaImgY, { fit: [firmaBoxW, firmaBoxH] }); }
+catch (e) { console.warn('firma_cliente invalida:', e.message); }
+}
+
+doc.moveTo(60, firmaY).lineTo(60 + firmaBoxW, firmaY).stroke('#d1d5db');
+doc.font('Helvetica').fontSize(9).fillColor(GRIS).text('Firma del tecnico', 60, firmaY + 4);
+doc.moveTo(firmaClienteX, firmaY).lineTo(firmaClienteX + firmaBoxW, firmaY).stroke('#d1d5db');
+doc.text('Firma cliente', firmaClienteX, firmaY + 4);
 
 doc.rect(0, doc.page.height - 40, doc.page.width, 40).fill(AZUL);
 doc.font('Helvetica').fontSize(8).fillColor('#ffffff')
@@ -558,6 +578,12 @@ return { ok: true, error: null };
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatFecha(d) {
 return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+// Convierte un data URL "data:image/png;base64,...." (o un base64 pelado) en Buffer.
+function bufferFromDataUrl(dataUrl) {
+const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+return Buffer.from(base64, 'base64');
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────
