@@ -18,6 +18,17 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 const DRIVE_OK = !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REFRESH_TOKEN);
 const NOTIFICACIONES_EMAIL = process.env.NOTIFICACIONES_EMAIL || 'alarguesreforzados.dep.legal@gmail.com';
+// Clave compartida opcional para /generar-garantia y /archivar-trabajo: hoy cualquiera
+// en internet puede pegarle a esas rutas y generar PDFs/mails gratis a costa nuestra.
+// Si NO está seteada en Railway, el chequeo se salta entero (no corta nada mientras
+// se configura). Una vez cargada, el front (instalacion-aa-frontend) y mp-webhook ya
+// mandan el header x-api-key, así que activa sola sin tocar código de nuevo.
+const GARANTIA_API_KEY = process.env.GARANTIA_API_KEY;
+function requireApiKey(req, res, next) {
+  if (!GARANTIA_API_KEY) return next();
+  if (req.get('x-api-key') === GARANTIA_API_KEY) return next();
+  return res.status(401).json({ error: 'no autorizado' });
+}
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -58,7 +69,7 @@ app.post('/whatsapp-webhook', async (req, res) => {
 // trabajo, no depende del tipo). observaciones (opcional) se imprime en el PDF.
 // firma_tecnico / firma_cliente (opcionales): data URL "data:image/png;base64,..."
 // capturada en un canvas tactil; se estampan sobre las lineas de firma del PDF.
-app.post('/generar-garantia', async (req, res) => {
+app.post('/generar-garantia', requireApiKey, async (req, res) => {
 try {
 const {
 nombre_cliente = 'Cliente',
@@ -180,7 +191,7 @@ res.status(500).json({ error: err.message });
 // monto_total: 115500,
 // numero_trabajo: "RAF-00234",
 // }
-app.post('/archivar-trabajo', async (req, res) => {
+app.post('/archivar-trabajo', requireApiKey, async (req, res) => {
 try {
 const {
 trabajo_id,
