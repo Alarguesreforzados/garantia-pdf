@@ -68,6 +68,8 @@ direccion = '',
 equipo = '',
 trabajo = 'Instalación',
 tecnico = '',
+tecnico_id = '',
+trabajo_id = '',
 monto_total = 0,
 numero_trabajo = '',
 tipo_garantia = 'instalacion',
@@ -81,14 +83,40 @@ if (!email_cliente) {
 return res.status(400).json({ error: 'email_cliente es requerido' });
 }
 
+// Numeración automática por técnico (matrícula + correlativo). Si viene tecnico_id
+// se reserva un número real vía RPC (atómico); si el técnico no tiene matrícula
+// cargada, la RPC tira "tecnico_sin_matricula" y avisamos al front pero NO
+// bloqueamos el certificado — se sigue con el numero_trabajo/fallback de siempre.
+let numeroFinal = numero_trabajo;
+let tecnicoFinal = tecnico;
+let numeroWarning = '';
+if (tecnico_id) {
+const { data: numData, error: numErr } = await sb.rpc('asignar_numero_garantia', {
+p_tecnico_id: tecnico_id,
+p_tipo_garantia: tipo_garantia,
+p_cliente_nombre: nombre_cliente,
+p_cliente_email: email_cliente,
+p_trabajo_id: trabajo_id || null,
+});
+if (numErr) {
+console.warn('asignar_numero_garantia:', numErr.message);
+numeroWarning = numErr.message.includes('tecnico_sin_matricula')
+? 'El técnico no tiene matrícula cargada — se generó un número provisorio. Cargá su matrícula en el perfil para que numere bien la próxima vez.'
+: 'No se pudo asignar el número automático — se generó un número provisorio.';
+} else if (numData && numData[0]) {
+numeroFinal = numData[0].numero_comprobante;
+tecnicoFinal = numData[0].tecnico_nombre || tecnico;
+}
+}
+
 const pdfBuffer = await generarPDF({
 nombre_cliente, email_cliente, telefono,
-direccion, equipo, trabajo, tecnico,
-monto_total, numero_trabajo, tipo_garantia, garantia_meses, observaciones,
+direccion, equipo, trabajo, tecnico: tecnicoFinal,
+monto_total, numero_trabajo: numeroFinal, tipo_garantia, garantia_meses, observaciones,
 firma_tecnico, firma_cliente,
 });
 
-const fileName = `garantias/${tipo_garantia}_${numero_trabajo || Date.now()}_${nombre_cliente.replace(/\s+/g,'-')}.pdf`;
+const fileName = `garantias/${tipo_garantia}_${numeroFinal || Date.now()}_${nombre_cliente.replace(/\s+/g,'-')}.pdf`;
 const { error: upErr } = await sb.storage
 .from('garantias')
 .upload(fileName, pdfBuffer, { contentType: 'application/pdf', upsert: true });
@@ -100,23 +128,31 @@ const { data: urlData } = await sb.storage.from('garantias').createSignedUrl(fil
 pdfUrl = urlData?.signedUrl || '';
 }
 
+// Si el número vino de la RPC, dejamos guardada la URL del PDF en el registro de garantías.
+if (tecnico_id && !numeroWarning && pdfUrl) {
+const { error: garUpErr } = await sb.from('garantias').update({ pdf_url: pdfUrl }).eq('numero_comprobante', numeroFinal);
+if (garUpErr) console.warn('No se pudo guardar pdf_url en garantias:', garUpErr.message);
+}
+
 // Subir también a Google Drive (carpeta de documentos generados)
 let driveUrl = '';
 let driveError = DRIVE_OK ? null : 'credenciales OAuth de Google Drive no configuradas';
 if (DRIVE_OK) {
 try {
-driveUrl = await subirADrive(pdfBuffer, nombre_cliente, numero_trabajo || ('GAR-' + Date.now()), new Date().toISOString().split('T')[0]);
+driveUrl = await subirADrive(pdfBuffer, nombre_cliente, numeroFinal || ('GAR-' + Date.now()), new Date().toISOString().split('T')[0]);
 } catch (driveErr) {
 console.warn('Google Drive (garantia) no disponible:', driveErr.message);
 driveError = driveErr.message;
 }
 }
 
-const emailResult = await enviarEmailGarantia({ nombre_cliente, email_cliente, pdfBuffer, pdfUrl, numero_trabajo, monto_total });
+const emailResult = await enviarEmailGarantia({ nombre_cliente, email_cliente, pdfBuffer, pdfUrl, numero_trabajo: numeroFinal, monto_total });
 
 res.json({
 ok: true,
 pdf_url: pdfUrl,
+numero_comprobante: numeroFinal,
+numero_warning: numeroWarning || undefined,
 drive_url: driveUrl,
 drive_error: driveError, // TEMPORAL: para diagnosticar, sacar despues
 email_enviado: emailResult.ok,
